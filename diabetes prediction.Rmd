@@ -1,0 +1,288 @@
+---
+title: "Predicting Diabetes From Diagnostic Measurement"
+author: "Meinari Claudia"
+date: "4/18/2020"
+output: 
+  html_document:
+    theme : cerulean
+    highlight : breezedark
+    toc : true
+    toc_Depth : 2
+    toc_float : 
+      collapsed : true
+    df_print : paged
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+options(scipen = 9999)
+rm(list = ls())
+```
+
+![](diabetes.png) 
+
+# Introduction 
+Based on data from *World Health Organization (WHO)*, The number of people with diabetes has risen from 108 million in 1980 to 422 million in 2014 and the global prevalence of diabetes among adults over 18 years of age has risen from 4.7% in 1980 to 8.5% in 2014. Obviously we know that diabetes is a major cause of blindness, kidney failure, heart attacks, stroke and limb amputation. However, diabetes can be treated and its consequences avoided or delayed with diet, physical activity, medication and regular screening and treatment for complications.  
+
+Furthermore, this analysis aims to predict Diabetes from diagnostic measurement. The following dataset is originally donated to the UCI Machine Learning Repistory and organised by Friedrich Leisch. It contains 768 observations and 9 variables. 
+
+# Read Data
+
+```{r}
+diab <- read.csv("diabetes.csv")
+```
+
+After that we try to take a glimpse of our data structure using `str()`.
+```{r}
+str(diab)
+```
+## Variable Description
+* **pregnant** : Number of times pregnant  
+* **glucose** : Plasma glucose concentration (glucose tolerance test)  
+* **triceps** : Triceps skin fold thickness (mm Hg)  
+* **insulin** : 2-hour serum insulin (mu U/ml)  
+* **mass** : Body mass index (weight in kg/(height in m)^2)  
+* **pedigree** : Diabetes pedigree function  
+* **age** : Age (years)  
+* **diabetes** : Test for diabetes  
+
+Then, we inspect whether there is any missing value of our observation using `colsums(is.na())`.
+```{r}
+colSums(is.na(diab))
+```
+There is no missing data of our dataframe so we could proceed to the next step.
+
+
+# Basic Exploratory Data Analysis
+
+## How the diabetics accross Age group?
+```{r}
+library(tidyverse) #for data wrangling
+
+diab1 <- diab %>%
+  group_by(age, diabetes) %>%
+  summarise(total = n()) %>%
+  ungroup()
+
+
+library(ggplot2) # for plot
+plot_age_diab <- ggplot(data = diab1, aes(x= age, y= total, label = total))+
+  geom_line(aes(color =diabetes),)+
+  geom_point(aes(color=diabetes, show.legend = F))+
+  theme_bw()+
+  labs(title = "Diabetics based on Age",
+       x = "Age",
+       y = "Total")
+
+plot_age_diab
+
+```
+
+Based on plot above we know that many of diabetics are they who are in the age bracket from 30-40.
+
+# Data Analysis
+## Checking Correlation
+Here we would see the correlation among predictor variables.
+```{r}
+library(GGally)
+# inspect correlation between predictors
+GGally::ggcorr(diab[,-9], hjust = 1, layout.exp = 2, label = T, label_size = 2.9)
+```
+Based on the plot above, there is no strong correlation among predictor variables. This gave advantage in using model such as Naive Bayes.
+
+## Splitting Data
+
+In this step we create our train and test set with proportion 90% for data train and 10% for data test. The spliting will use random sampling, as followed :
+```{r}
+set.seed(100)
+in_diab_train <-  sample(nrow(diab), nrow(diab)*0.9)
+diab_train <- diab[in_diab_train,]
+diab_test <- diab[-in_diab_train,]
+```
+
+```{r}
+dim(diab_train)
+```
+
+```{r}
+dim(diab_test)
+```
+
+```{r}
+# erase target variable on data set
+toppredict_set <- diab_test[1:8]
+
+dim(toppredict_set)
+```
+
+
+# Modelling
+
+In this step, we build our classification model using several algorithms and comparing accuracy level of all models. In which the models that will builst are **Naive Bayes, Decision Tree, and Random Forest**.
+
+
+## Naive Bayes {.tabset}
+```{r}
+# creating Naive Bayes model
+library(e1071) # for naive bayes
+model_naive <- naiveBayes(diabetes ~., data = diab_train)
+
+# predicting target 
+preds_naive <- predict(model_naive, newdata = toppredict_set)
+
+(conf_matrix_naive <- table(preds_naive, diab_test$diabetes))
+```
+Result of *confusion Matrix* shows that Naive Bayes predicts 40 cases negative diabetes correctly and 11 cases with wrong prediction. At the same time, this model predicts that there are 14 positive diabetes correctly and 12 cases of wrong prediction. How about the accuracy level? We can see using `confusionMatrix` function below:
+
+```{r}
+library(caret) # for confusion matrix
+confusionMatrix(conf_matrix_naive)
+```
+From output `Naive Bayes` model we can see that the accuracy level is only **70%**.
+
+## Decision Tree {.tabset}
+
+The second model that will be used is **Decision Tree**  
+Decision tree analysis is a classification method that uses tree-like models of decisions and their possible outcomes. This method is one of the most commonly used tools in machine learning analysis. We will use the rpart library in order to use recursive partitioning methods for decision trees. This exploratory method will identify the most important variables related to churn in a hierarchical format. 
+
+```{r}
+library(partykit) #for decision tree
+
+model_dt <- ctree(diabetes~., diab_train)
+```
+
+plot the `model_dt` :
+```{r}
+plot(model_dt)
+```
+
+```{r}
+plot(model_dt, type = "simple")
+```
+From figure above, we can see the number of `nodes` and its distribution. In which :  
+- [1] is **root node**  
+- [2],[3],[4], and [9] are **internal nodes** or branch. Internal nodes shown by arrow pointting *to/from* them.  
+- [5],[6],[7],[8],[10],[11] are **leaf nodes** or leaf. The leaf shown by arrow pointting *to* them.
+
+Based on function below we can see that there are **6** leafs and **5** inner nodes. For the first branch is *age*, then *body mass*, *pregant* and then *mass* (this classification for the glucose rate is more than > 127).
+
+```{r}
+model_dt
+```
+The model above we can apply to our data test.
+```{r}
+predict(model_dt, head(diab_test[,-9]))
+```
+Make prediction of data test `using model_dt`.
+
+```{r}
+pred_dt <- predict(model_dt, diab_test[,-9])
+```
+
+Call the confusion matrix
+```{r}
+(conf_matrix_dtree <- table(pred_dt, diab_test$diabetes))
+```
+Result of *confusion Matrix* shows that decision tree predicts 44 cases negative diabetes correctly and 14 cases with wrong prediction. At the same time, this model predicts that there are 11 positive diabetes correctly and 8 cases of wrong prediction. There is increasing in false positive in this case. To see the accuracy, we use again `confusionMatrix` on model classification Decision tree:
+
+```{r}
+predict(model_dt, head(diab_test[,-9]), type="prob")
+```
+
+```{r}
+caret::confusionMatrix(pred_dt, diab_test[,9])
+```
+
+From output `Decision Tree` model we can see that the accuracy level is **71%**. So far, our model `Decision Tree` is slightly better in predicting diabetes cases over `Naive Bayes` model.
+
+
+## Random Forest {.tabset}  
+
+Random forest analysis is another machine learning classification method that is often used in classification analysis. The method operates by constructing multiple decision trees and constructing models based on summary statistics of these decision trees.
+
+
+```{r}
+library(randomForest) # for random forest
+set.seed(101)
+n0_var <- nearZeroVar(diab[1:7]) #NzeroVar on dataset are data from colomn 1 until 7
+
+db <- diab[,-n0_var] #n0_var is used to substract variables that has variance close to 0.
+```
+
+```{r}
+library(animation)
+ani.options(interval = 1, nmax = 15)
+
+cv.ani(main = "Demonstartion of th k-fold Cross Validation", bty = "l")
+```
+Now, the model will be built using 5-fold cross validation, and 3 repeats, as followed :
+```{r, eval= FALSE}
+set.seed(101)
+ctrl <- trainControl(method = "repeatedcv", number =5, repeats = 3) # train() to make model, method = to use k-fold, repeats= to show the best 3 value of mytr
+
+model_forest <- train(diabetes~., data=diab_train, method="rf", trControl=ctrl)
+
+saveRDS(model_forest, file = "model_forest.rds")
+```
+
+```{r}
+model_forest <- readRDS("model_forest.rds")
+```
+
+Based on result the best mytr is 2 (2 variables) in which the accuracy level using 2 variables is the best out of all trail mytr. Therefore, we know that `mytr` is number of variable used in modelling process. If we plot it we can get the result as followed :
+```{r}
+plot(model_forest) 
+```
+
+```{r}
+sum(predict(model_forest, diab_test[,-9])==diab_test[,9])
+```
+
+```{r}
+varImp(model_forest)
+```
+Based on result above, we know that `glucose` rate has the highest impact to the result while the other variables are only 50% or less than it. Then, we can see OOB on every class by using plot.:
+
+```{r}
+plot(model_forest$finalModel)
+legend("topright", colnames(model_forest$finalModel$err.rate),
+       col=1:6, cex= 0.8, fill=1:6)
+```
+
+Based on visualization above comparison of OOB and targeted variable. It depicts that from tree number around 90 the error of model has been better, yet we can still use more than 400 trees to reduce our OOB.  
+Next, we can see the final model as followed:
+```{r}
+model_forest$finalModel
+```
+
+Using mtry 2 variable we get our model in predicting 383 case negative diabetes correctly and 65 wrong prediction. At the same time, in predicting 143 positive cases diabetes with 100 cases wrong.
+```{r}
+predict_forest <- predict(model_forest, toppredict_set)
+```
+
+```{r}
+(conf_matrix_forest1 <- table(predict_forest, diab_test$diabetes))
+```
+Result of *confusion Matrix* shows that random forest predicts 45 cases negative diabetes correctly and 11 cases with wrong prediction. At the same time, this model predicts that there are 14 positive diabetes correctly and 7 cases of wrong prediction. There is increasing in false positive in this case. To see the accuracy, we use again `confusionMatrix` on model classification Decision tree:
+
+```{r}
+confusionMatrix(conf_matrix_forest1)
+```
+Using random forest our model accuracy in predicting diabetes increased to **76%**. This number is better than accuracy level produced by `decision tree` or `naive bayes`.
+
+# Conclusion
+If we compare accuracy and sensitivity level of our models to see the highest value, we can summarise as followed :
+```{r}
+confusionMatrix(conf_matrix_naive) 
+```
+```{r}
+confusionMatrix(conf_matrix_dtree) 
+```
+
+```{r}
+confusionMatrix(conf_matrix_forest1) 
+```
+* **glucose** is variable that most impact to diabetes, and followed by *age*, *pedigree* and *pressure*.  
+* In getting model with best performance, especially for *naive bayes* and *decision tree* can be done by adjusting and seeking for the proper cutoff value. Obviously, in this analysis we desire to minimize the False Positive, so we need to find out the cutoff value that can give good rate of recall.  
+* Based on order accuracy and recall value, **random forest** model is the best classification model, with accuracy level of 76% and recall level 86%, while model naive bayes (accuracy = 70%, recall =76%) and decision tree (accuracy = 71% and recall = 84%). However, we can still improve our models by doing validation to k-fold value especially on random forest model.
